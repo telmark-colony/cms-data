@@ -7,7 +7,9 @@ setup(
         "dagster",
         "dagster-cloud",
         "dagster-gcp",
-        "dagster-gcp-pandas"
+        "dagster-gcp-pandas",
+        "google-cloud-storage",
+        "openpyxl"
     ],
     extras_require={"dev": ["dagster-webserver", "pytest"]},
 )
