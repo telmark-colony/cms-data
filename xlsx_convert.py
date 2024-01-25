@@ -21,13 +21,17 @@ def convert_xlsx_to_csv(
         bucket = storage_client.bucket(bucket_name)
         out_blob = bucket.blob(out_file_path)
 
-        with blob.open("rb") as fin, out_blob.open("wb") as fout:
+        with blob.open("rb") as fin:
             df = pd.read_excel(fin)
-            df.to_csv(fout, index=False)
+            output_csv = df.to_csv(index=False)
+
+        with out_blob.open("w") as fout:
+            fout.write(output_csv)
 
 if __name__=="__main__":
     convert_xlsx_to_csv(
         "telmark-gcs-development", 
-        "mis/productivity/desk collection - fv/Shopee_xlsx/reportcallSHOPEE",
+        # "mis/productivity/desk collection - fv/Shopee_xlsx/reportcallSHOPEE",
+        "mis/productivity/desk collection - fv/Shopee_xlsx/reportcallSHOPEE 1 - 5 Desember.xlsx",
         "mis/productivity/desk collection - fv/Shopee_csv_autoconvert/"
     )
