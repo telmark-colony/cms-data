@@ -1,4 +1,10 @@
-from dagster import Definitions, load_assets_from_modules
+from dagster import (
+    AssetSelection,
+    Definitions,
+    ScheduleDefinition,
+    define_asset_job,
+    load_assets_from_modules,
+)
 
 from dagster_gcp import BigQueryResource
 
@@ -6,12 +12,20 @@ from . import assets
 
 all_assets = load_assets_from_modules([assets])
 
+cms_job = define_asset_job("cms_job", selection=AssetSelection.all())
+
+cms_schedule = ScheduleDefinition(
+    job=cms_job,
+    cron_schedule="0 */3 * * *",  # every 3 hour
+)
+
 defs = Definitions(
     assets=all_assets,
-        resources={
+    resources={
         "bigquery": BigQueryResource(
-            project="telmark-gcp",  # required
-            location="asia-southeast2",  # optional, defaults to the default location for the project - see https://cloud.google.com/bigquery/docs/locations for a list of locations
+            project="telmark-gcp",  
+            location="asia-southeast2",
         )
-    }
+    },
+    schedules=[cms_schedule]
 )
