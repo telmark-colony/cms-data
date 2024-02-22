@@ -8,15 +8,15 @@ from dagster import (
 
 from dagster_gcp import BigQueryResource
 
-from . import assets
+from . import cms_assets, shopee_assets
 
-all_assets = load_assets_from_modules([assets])
+all_assets = load_assets_from_modules([cms_assets, shopee_assets])
 
 cms_job = define_asset_job("cms_job", selection=AssetSelection.all())
 
 cms_schedule = ScheduleDefinition(
     job=cms_job,
-    cron_schedule="0 */3 * * *",  # every 3 hour
+    cron_schedule="0 7 * * *",  # every day at 7am UTC
 )
 
 defs = Definitions(
