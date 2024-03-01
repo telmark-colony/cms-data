@@ -103,6 +103,41 @@ def cms_companies(bigquery: BigQueryResource) -> None:
     )
 
 
+@asset
+def cms_campaigns(bigquery: BigQueryResource) -> None:
+    cms_to_bronze(
+        bigquery=bigquery,
+        source_table="campaigns",
+        dest_table="campaigns",
+        add_cols=[
+            "company_id",
+            "name",
+            "description",
+            "start_date",
+            "end_date",
+            "latest_status",
+            "daily_start_time",
+            "daily_end_time"
+        ]
+    )
+
+
+@asset
+def cms_wa_campaign_details(bigquery: BigQueryResource) -> None:
+    cms_to_bronze(
+        bigquery=bigquery,
+        source_table="wa_campaign_details",
+        dest_table="wa_campaign_details",
+        add_cols=[
+            "campaign_id",
+            "wa_template_id",
+            "type",
+            "provider_type"
+        ]
+    )
+
+
+
 @asset(deps=[cms_users])
 def dim_users(bigquery: BigQueryResource) -> None:
     job_config = bq.QueryJobConfig(
@@ -144,7 +179,7 @@ def dim_roles(bigquery: BigQueryResource) -> None:
     )
     job_config.write_disposition = "WRITE_TRUNCATE"
     sql = f"""
-SELECT
+        SELECT
             unique_id AS users_roles_unique_id,
             roles.company_id,
             user_id,
@@ -190,11 +225,45 @@ def dim_companies(bigquery: BigQueryResource) -> None:
         job = client.query(sql, job_config=job_config)
         job.result()
 
+
+@asset(deps=[cms_campaigns, cms_wa_campaign_details])
+def dim_campaigns(bigquery: BigQueryResource) -> None:
+    job_config = bq.QueryJobConfig(
+        destination="telmark-gcp.cms_dev_silver.dim_campaigns"
+    )
+    job_config.write_disposition = "WRITE_TRUNCATE"
+    sql = f"""
+        SELECT
+            campaigns.id,      
+            campaigns.company_id,
+            campaigns.name,
+            campaigns.description,
+            campaigns.start_date,
+            campaigns.end_date,
+            campaigns.latest_status,
+            campaigns.daily_start_time,
+            campaigns.daily_end_time,
+            wa_campaign_details.type,
+            wa_campaign_details.provider_type wa_provider_type
+        FROM
+            cms_dev_bronze.campaigns campaigns
+                LEFT JOIN cms_dev_bronze.wa_campaign_details wa_campaign_details
+                ON campaigns.id = wa_campaign_details.campaign_id
+        WHERE
+            campaigns.is_active = 1 AND wa_campaign_details.is_active = 1;
+        """
+
+    with bigquery.get_client() as client:
+        job = client.query(sql, job_config=job_config)
+        job.result()
+
+
 @asset(
     deps=[
         dim_users,
         dim_companies,
-        dim_roles
+        dim_roles,
+        dim_campaigns
     ]
 )
 def mv_users(bigquery: BigQueryResource) -> None:
@@ -207,13 +276,17 @@ def mv_users(bigquery: BigQueryResource) -> None:
             users.email,
             users.is_superadmin,
             companies.name as company_name,
-            roles.role_name
+            roles.role_name,
+            campaigns.name as campaign_name,
+            campaigns.type as campaign_type
         FROM
             cms_dev_silver.dim_roles roles
                 INNER JOIN cms_dev_silver.dim_users users
                     ON roles.user_id = users.id
                 INNER JOIN cms_dev_silver.dim_companies companies
                     ON roles.company_id = companies.id
+                INNER JOIN cms_dev_silver.dim_campaigns campaigns
+                    ON companies.id = campaigns.company_id
         """
 
     with bigquery.get_client() as client:
