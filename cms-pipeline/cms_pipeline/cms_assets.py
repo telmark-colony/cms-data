@@ -89,6 +89,20 @@ def cms_roles(bigquery: BigQueryResource) -> None:
 
 
 @asset
+def cms_companies_users_managers(bigquery: BigQueryResource) -> None:
+    cms_to_bronze(
+        bigquery=bigquery,
+        source_table="companies_users_managers",
+        dest_table="companies_users_managers",
+        add_cols=[
+            "company_id",
+            "user_id",
+            "manager_id"
+        ]
+    )
+
+
+@asset
 def cms_companies(bigquery: BigQueryResource) -> None:
     cms_to_bronze(
         bigquery=bigquery,
@@ -170,7 +184,8 @@ def dim_users(bigquery: BigQueryResource) -> None:
 @asset(
     deps=[
         cms_users_roles,
-        cms_roles
+        cms_roles,
+        cms_companies_users_managers
     ]
 )
 def dim_roles(bigquery: BigQueryResource) -> None:
@@ -182,7 +197,8 @@ def dim_roles(bigquery: BigQueryResource) -> None:
         SELECT
             unique_id AS users_roles_unique_id,
             roles.company_id,
-            user_id,
+            users_roles.user_id,
+            managers.manager_id AS manager_id,
             roles.name AS role_name
         FROM
             cms_dev_bronze.users_roles users_roles
@@ -191,6 +207,9 @@ def dim_roles(bigquery: BigQueryResource) -> None:
                     AND users_roles.company_id = roles.company_id
                 LEFT JOIN cms_dev_bronze.companies companies
                 ON users_roles.company_id = companies.id
+                LEFT JOIN cms_dev_bronze.companies_users_managers managers
+                ON users_roles.company_id = managers.company_id
+                    AND users_roles.user_id = managers.user_id
         WHERE
             users_roles.is_active = 1;
         """
@@ -272,21 +291,49 @@ def mv_users(bigquery: BigQueryResource) -> None:
     )
     job_config.write_disposition = "WRITE_TRUNCATE"
     sql = f"""
-        SELECT
-            users.email,
-            users.is_superadmin,
-            companies.name as company_name,
-            roles.role_name,
-            campaigns.name as campaign_name,
-            campaigns.type as campaign_type
-        FROM
-            cms_dev_silver.dim_roles roles
-                INNER JOIN cms_dev_silver.dim_users users
-                    ON roles.user_id = users.id
-                INNER JOIN cms_dev_silver.dim_companies companies
-                    ON roles.company_id = companies.id
-                INNER JOIN cms_dev_silver.dim_campaigns campaigns
-                    ON companies.id = campaigns.company_id
+        WITH user_base AS (
+            SELECT
+                users.id as user_id,
+                roles.manager_id,
+                users.email,
+                users.is_superadmin,
+                companies.name as company_name,
+                roles.role_name,
+                campaigns.name as campaign_name,
+                campaigns.type as campaign_type
+            FROM
+                cms_dev_silver.dim_roles roles
+                    INNER JOIN cms_dev_silver.dim_users users
+                        ON roles.user_id = users.id
+                    INNER JOIN cms_dev_silver.dim_companies companies
+                        ON roles.company_id = companies.id
+                    INNER JOIN cms_dev_silver.dim_campaigns campaigns
+                        ON companies.id = campaigns.company_id
+        )
+        SELECT 
+            user_view_as_id,
+            user_view_as_email,
+            user_id,
+            manager_id,
+            email,
+            is_superadmin,
+            company_name,
+            role_name,
+            campaign_name,
+            campaign_type
+        FROM (
+            (SELECT user_id user_view_as_id, * FROM user_base) 
+            UNION ALL
+            (SELECT manager_id user_view_as_id, * FROM user_base WHERE manager_id IS NOT NULL) 
+        ) t_all
+        LEFT JOIN (
+            SELECT
+                id,
+                email user_view_as_email
+            FROM
+                cms_dev_silver.dim_users
+        ) t_users
+        ON t_all.user_view_as_id = t_users.id
         """
 
     with bigquery.get_client() as client:
