@@ -16,7 +16,7 @@ cms_job = define_asset_job("cms_job", selection=AssetSelection.groups("cms_asset
 
 cms_schedule = ScheduleDefinition(
     job=cms_job,
-    cron_schedule="0 7 * * *",  # every day at 7am UTC
+    cron_schedule="0 * * * *", # hourly
 )
 
 shopee_asset_list = load_assets_from_modules([shopee_assets], group_name="shopee_assets")
