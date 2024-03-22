@@ -82,61 +82,6 @@ def cms_companies(bigquery: BigQueryResource) -> None:
 
 
 @asset
-def cms_campaigns(bigquery: BigQueryResource) -> None:
-    cms_to_bronze(
-        bigquery=bigquery,
-        source_table="campaigns",
-        dest_table="campaigns",
-        add_cols=[
-            "company_id",
-            "name",
-            "description",
-            "start_date",
-            "end_date",
-            "latest_status",
-            "daily_start_time",
-            "daily_end_time"
-        ]
-    )
-
-
-@asset
-def cms_wa_campaign_details(bigquery: BigQueryResource) -> None:
-    cms_to_bronze(
-        bigquery=bigquery,
-        source_table="wa_campaign_details",
-        dest_table="wa_campaign_details",
-        add_cols=[
-            "campaign_id",
-            "wa_template_id",
-            "type",
-            "provider_type"
-        ]
-    )
-
-
-@asset
-def cms_wa_chat(bigquery: BigQueryResource) -> None:
-    cms_to_bronze(
-        bigquery=bigquery,
-        source_table="wa_chats",
-        dest_table="wa_chats",
-        add_cols=[
-            "wa_message_id",
-            "wa_chat_room_id",
-            "is_self",
-            "message",
-            "status",
-            "sent_timestamp",
-            "delivered_timestamp",
-            "read_timestamp",
-            "wa_campaign_detail_id",
-            "user_id"
-        ]
-    )
-
-
-@asset
 def cms_customers(bigquery: BigQueryResource) -> None:
     cms_to_bronze(
         bigquery=bigquery,
@@ -152,6 +97,25 @@ def cms_customers(bigquery: BigQueryResource) -> None:
             "loan_amount",
             "outstanding_amount",
             "due_date"
+        ]
+    )
+
+
+@asset
+def cms_campaigns(bigquery: BigQueryResource) -> None:
+    cms_to_bronze(
+        bigquery=bigquery,
+        source_table="campaigns",
+        dest_table="campaigns",
+        add_cols=[
+            "company_id",
+            "name",
+            "description",
+            "start_date",
+            "end_date",
+            "latest_status",
+            "daily_start_time",
+            "daily_end_time"
         ]
     )
 
@@ -192,6 +156,112 @@ def cms_campaign_flows(bigquery: BigQueryResource) -> None:
     )
 
 
+@asset
+def cms_wa_accounts(bigquery: BigQueryResource) -> None:
+    cms_to_bronze(
+        bigquery=bigquery,
+        source_table="wa_accounts",
+        dest_table="wa_accounts",
+        add_cols=[
+            "company_id",
+            "phone_number",
+            "active_chat_limit",
+            "provider_type",
+            "status",
+            "wa_phone_number_id"
+        ]
+    )
+
+
+@asset
+def cms_wa_templates(bigquery: BigQueryResource) -> None:
+    cms_to_bronze(
+        bigquery=bigquery,
+        source_table="wa_templates",
+        dest_table="wa_templates",
+        add_cols=[
+            "company_id",
+            "type",
+            "provider_type",
+            "name",
+            "content",
+            "file_key",
+            "status",
+            "meta_template_name",
+            "rejected_reason"
+        ]
+    )
+
+
+
+@asset
+def cms_wa_campaign_details(bigquery: BigQueryResource) -> None:
+    cms_to_bronze(
+        bigquery=bigquery,
+        source_table="wa_campaign_details",
+        dest_table="wa_campaign_details",
+        add_cols=[
+            "campaign_id",
+            "wa_template_id",
+            "type",
+            "provider_type"
+        ]
+    )
+
+
+@asset
+def cms_wa_chat(bigquery: BigQueryResource) -> None:
+    cms_to_bronze(
+        bigquery=bigquery,
+        source_table="wa_chats",
+        dest_table="wa_chats",
+        add_cols=[
+            "wa_message_id",
+            "wa_chat_room_id",
+            "is_self",
+            "message",
+            "status",
+            "sent_timestamp",
+            "delivered_timestamp",
+            "read_timestamp",
+            "wa_campaign_detail_id",
+            "user_id",
+            "type",
+            "failed_reason",
+            "raw"
+        ]
+    )
+
+
+
+@asset
+def cms_wa_chat_rooms(bigquery: BigQueryResource) -> None:
+    cms_to_bronze(
+        bigquery=bigquery,
+        source_table="wa_chat_rooms",
+        dest_table="wa_chat_rooms",
+        add_cols=[
+            "wa_account_id",
+            "phone_number",
+            "unread_replies",
+            "room_expiration_time",
+            "init_by_self_timestamp"
+        ]
+    )
+
+
+
+@asset
+def cms_wa_agent_customer_rooms(bigquery: BigQueryResource) -> None:
+    cms_to_bronze(
+        bigquery=bigquery,
+        source_table="wa_agent_customer_rooms",
+        dest_table="wa_agent_customer_rooms",
+        add_cols=[
+            "campaign_flow_customer_id",
+            "wa_chat_room_id"
+        ]
+    )
 
 
 @asset(deps=[cms_users])
@@ -420,7 +490,7 @@ def dim_user_view(bigquery: BigQueryResource) -> None:
         job.result()
 
 
-@asset(deps=[cms_wa_chat, cms_users])
+@asset(deps=[cms_wa_chat, cms_wa_chat_rooms, cms_users])
 def dim_waba_chat(bigquery: BigQueryResource):
     job_config = bq.QueryJobConfig(
         destination="telmark-gcp.cms_dev_silver.dim_waba_chat"
@@ -430,6 +500,10 @@ def dim_waba_chat(bigquery: BigQueryResource):
         SELECT
             wa_chats.wa_message_id,
             wa_chats.wa_chat_room_id,
+            wa_chat_rooms.wa_account_id,
+            wa_chat_rooms.phone_number,
+            wa_chat_rooms.unread_replies,
+            wa_chat_rooms.room_expiration_time,
             wa_chats.is_self,
             wa_chats.message,
             wa_chats.status,
@@ -443,8 +517,65 @@ def dim_waba_chat(bigquery: BigQueryResource):
             cms_dev_bronze.wa_chats wa_chats
             LEFT JOIN cms_dev_bronze.users users
                 ON wa_chats.user_id = users.id
+            LEFT JOIN cms_dev_bronze.wa_chat_rooms wa_chat_rooms
+                ON wa_chats.wa_chat_room_id = wa_chat_rooms.id
         WHERE
             wa_chats.is_active = 1;
+        """
+
+    with bigquery.get_client() as client:
+        job = client.query(sql, job_config=job_config)
+        job.result()
+
+
+@asset(deps=[cms_wa_accounts])
+def dim_wa_accounts(bigquery: BigQueryResource):
+    job_config = bq.QueryJobConfig(
+        destination="telmark-gcp.cms_dev_silver.dim_wa_accounts"
+    )
+    job_config.write_disposition = "WRITE_TRUNCATE"
+    sql = f"""
+        SELECT
+            id,
+            company_id,
+            phone_number,
+            active_chat_limit,
+            provider_type,
+            status,
+            wa_phone_number_id
+        FROM
+            cms_dev_bronze.wa_accounts
+        WHERE
+            is_active = 1
+        """
+
+    with bigquery.get_client() as client:
+        job = client.query(sql, job_config=job_config)
+        job.result()
+
+
+@asset(deps=[cms_wa_templates])
+def dim_wa_templates(bigquery: BigQueryResource):
+    job_config = bq.QueryJobConfig(
+        destination="telmark-gcp.cms_dev_silver.dim_wa_templates"
+    )
+    job_config.write_disposition = "WRITE_TRUNCATE"
+    sql = f"""
+        SELECT
+            id,
+            company_id,
+            type,
+            provider_type,
+            name,
+            content,
+            file_key,
+            status,
+            meta_template_name,
+            rejected_reason
+        FROM
+            cms_dev_bronze.wa_templates
+        WHERE
+            is_active = 1
         """
 
     with bigquery.get_client() as client:
@@ -522,7 +653,7 @@ def mv_waba_chat(bigquery: BigQueryResource):
         user_message.num_sent,
         user_message.num_delivered,
         user_message.num_read,
-        reply_message.num_reply
+        reply_message.num_reply,
     FROM (
         SELECT 
             user_view.user_view_as_id,
@@ -556,8 +687,7 @@ def mv_waba_chat(bigquery: BigQueryResource):
         WHERE
             user_id IS NOT NULL
         GROUP BY
-            wa_campaign_detail_id,
-            user_id
+            1, 2
     ) user_message
         ON user_campaign.details_id = user_message.wa_campaign_detail_id
         AND user_campaign.user_id = user_message.user_id
@@ -574,13 +704,95 @@ def mv_waba_chat(bigquery: BigQueryResource):
                 MIN(is_self) has_reply
             FROM
                 cms_dev_silver.dim_waba_chat
-            GROUP BY
-                wa_chat_room_id
+            GROUP BY 1
         ) t_waba1
         GROUP BY 1, 2
     ) reply_message
     ON user_message.wa_campaign_detail_id = reply_message.wa_campaign_detail_id
     AND user_message.user_id = reply_message.user_id
+    """
+    with bigquery.get_client() as client:
+        job = client.query(sql, job_config=job_config)
+        job.result()
+
+
+@asset(deps=[dim_user_view, dim_wa_accounts])
+def mv_wa_accounts(bigquery: BigQueryResource):
+    job_config = bq.QueryJobConfig(
+        destination="telmark-gcp.cms_dev_gold.mv_wa_accounts"
+    )
+    job_config.write_disposition = "WRITE_TRUNCATE"
+    sql = """
+    SELECT
+        user_view.user_view_as_id,
+        user_view.user_view_as_email,
+        user_view.user_id,
+        user_view.full_name,
+        user_view.email,
+        user_view.company_id,
+        user_view.company_name,
+        wa_accounts.id wa_account_id,
+        wa_accounts.wa_phone_number_id,
+        wa_accounts.phone_number,
+        wa_accounts.active_chat_limit,
+        wa_accounts.provider_type,
+        wa_accounts.status
+    FROM (
+        SELECT DISTINCT
+            user_view_as_id,
+            user_view_as_email,
+            user_id,
+            full_name,
+            email,
+            company_id,
+            company_name
+        FROM
+            cms_dev_silver.dim_user_view
+    ) user_view
+    LEFT JOIN cms_dev_silver.dim_wa_accounts wa_accounts
+    ON user_view.company_id = wa_accounts.company_id
+    """
+    with bigquery.get_client() as client:
+        job = client.query(sql, job_config=job_config)
+        job.result()
+    
+
+@asset(deps=[dim_user_view, dim_wa_templates])
+def mv_wa_templates(bigquery: BigQueryResource):
+    job_config = bq.QueryJobConfig(
+        destination="telmark-gcp.cms_dev_gold.mv_wa_templates"
+    )
+    job_config.write_disposition = "WRITE_TRUNCATE"
+    sql = """
+    SELECT
+        user_view.user_view_as_id,
+        user_view.user_view_as_email,
+        user_view.user_id,
+        user_view.full_name,
+        user_view.email,
+        user_view.company_id,
+        user_view.company_name,
+        wa_templates.id wa_template_id,
+        wa_templates.type wa_template_type,
+        wa_templates.provider_type wa_template_provider_type,
+        wa_templates.name wa_template_name,
+        wa_templates.status wa_template_status,
+        wa_templates.meta_template_name wa_meta_template_name,
+        wa_templates.rejected_reason wa_template_rejected_reason
+    FROM (
+        SELECT DISTINCT
+            user_view_as_id,
+            user_view_as_email,
+            user_id,
+            full_name,
+            email,
+            company_id,
+            company_name
+        FROM
+            cms_dev_silver.dim_user_view
+    ) user_view
+    LEFT JOIN cms_dev_silver.dim_wa_templates wa_templates
+    ON user_view.company_id = wa_templates.company_id
     """
     with bigquery.get_client() as client:
         job = client.query(sql, job_config=job_config)
