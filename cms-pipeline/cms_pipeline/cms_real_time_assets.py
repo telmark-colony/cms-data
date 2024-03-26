@@ -19,6 +19,7 @@ def cms_campaign_flow_agents(bigquery: BigQueryResource) -> None:
         ]
     )
 
+
 @asset(deps=[cms_campaign_flow_agents])
 def mv_agent_status(bigquery: BigQueryResource) -> None:
     execute_sql_file(bigquery, "gold", "mv_agent_status")

@@ -1,6 +1,7 @@
 SELECT
     user_campaign.user_view_as_id,
     user_campaign.user_view_as_email,
+    user_campaign.user_view_is_agent,
     user_campaign.user_id,
     user_campaign.email,
     user_campaign.full_name,
@@ -18,6 +19,7 @@ FROM (
     SELECT 
         user_view.user_view_as_id,
         user_view.user_view_as_email,
+        user_view.user_view_is_agent,
         user_view.user_id,
         user_view.email,
         user_view.full_name,
@@ -32,8 +34,6 @@ FROM (
         {dataset_prefix}_silver.dim_user_view user_view
             LEFT JOIN {dataset_prefix}_silver.dim_campaigns campaigns
             ON user_view.campaign_id = campaigns.id
-    WHERE
-        user_view.role_name = 'Agent'
 ) user_campaign 
 LEFT JOIN (
     SELECT

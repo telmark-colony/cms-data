@@ -46,7 +46,8 @@ def cms_roles(bigquery: BigQueryResource) -> None:
         dest_table="roles",
         add_cols=[
             "company_id",
-            "name"
+            "name",
+            "is_agent"
         ]
     )
 
@@ -153,6 +154,24 @@ def cms_campaign_flows(bigquery: BigQueryResource) -> None:
             "channel_specific_type"
         ]
     )
+
+
+@asset
+def cms_campaign_flow_customers(bigquery: BigQueryResource) -> None:
+    cms_to_bronze(
+        bigquery=bigquery,
+        source_table="campaign_flow_customers",
+        dest_table="campaign_flow_customers",
+        add_cols=[
+            "campaign_flow_id",
+            "customer_id",
+            "user_id",
+            "status",
+            "expiration_time",
+            "total_unread",
+            "last_interact_time"
+        ]
+    )    
 
 
 @asset
@@ -268,13 +287,7 @@ def dim_users(bigquery: BigQueryResource) -> None:
     execute_sql_file(bigquery, "silver", "dim_users")
 
 
-@asset(
-    deps=[
-        cms_users_roles,
-        cms_roles,
-        cms_companies_users_managers
-    ]
-)
+@asset(deps=[cms_users_roles, cms_roles, cms_companies_users_managers])
 def dim_roles(bigquery: BigQueryResource) -> None:
     execute_sql_file(bigquery, "silver", "dim_roles")
 
@@ -314,18 +327,17 @@ def dim_wa_templates(bigquery: BigQueryResource):
     execute_sql_file(bigquery, "silver", "dim_wa_templates")
 
 
-@asset(deps=[dim_user_view, dim_customers])
+@asset(deps=[cms_campaign_flow_customers])
+def fact_agent_assignments(bigquery: BigQueryResource) -> None:
+    execute_sql_file(bigquery, "silver", "fact_agent_assignments")
+
+
+@asset(deps=[dim_user_view, dim_customers, fact_agent_assignments])
 def mv_campaign_overview(bigquery: BigQueryResource) -> None:
     execute_sql_file(bigquery, "gold", "mv_campaign_overview")
 
 
-@asset(
-    deps=[
-        dim_user_view,
-        dim_campaigns,
-        dim_waba_chat
-    ]
-)
+@asset(deps=[dim_user_view, dim_campaigns, dim_waba_chat])
 def mv_waba_chat(bigquery: BigQueryResource):
     execute_sql_file(bigquery, "gold", "mv_waba_chat")
 
